@@ -73,6 +73,7 @@
       window.onYouTubeIframeAPIReady = function () {
         try {
           player = new window.YT.Player("player", {
+            host: "https://www.youtube-nocookie.com",
             width: "100%",
             height: "100%",
             videoId: videoId,
@@ -86,7 +87,7 @@
               origin: location.origin,
               playsinline: 1,
               rel: 0,
-              widget_referrer: location.origin
+              widget_referrer: location.href
             },
             events: {
               onReady: function (event) {

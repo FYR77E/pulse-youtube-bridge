@@ -14,3 +14,5 @@ Query parameters:
 - `controls`: `1` or `0`.
 
 The bridge does not proxy, download, modify, or store video content.
+The player uses YouTube's privacy-enhanced host and identifies the HTTPS bridge
+URL as the widget referrer for local Android WebViews.
