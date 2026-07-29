@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>Pulse YouTube Bridge</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #player { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    iframe { display: block; width: 100%; height: 100%; border: 0; }
+    #status {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      color: #d8dadd;
+      font: 600 18px/1.4 Arial, sans-serif;
+      text-align: center;
+    }
+    body.is-ready #status { display: none; }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div id="status">Connecting to YouTube</div>
+  <script>
+    (function () {
+      "use strict";
+
+      var query = {};
+      String(location.search || "").replace(/^\?/, "").split("&").forEach(function (pair) {
+        var parts = pair.split("=");
+        if (!parts[0]) return;
+        try { query[decodeURIComponent(parts[0])] = decodeURIComponent(parts.slice(1).join("=") || ""); }
+        catch (error) {}
+      });
+
+      var videoId = String(query.v || "");
+      var instance = String(query.instance || "");
+      var muted = !/^(?:0|false|no)$/i.test(String(query.mute || "1"));
+      var controls = /^(?:1|true|yes)$/i.test(String(query.controls || "0"));
+      var player = null;
+      var readyTimer = 0;
+
+      function notify(eventName, payload) {
+        var message = {
+          source: "pulse-youtube-bridge",
+          instance: instance,
+          event: eventName
+        };
+        Object.keys(payload || {}).forEach(function (key) { message[key] = payload[key]; });
+        try { window.parent.postMessage(message, "*"); } catch (error) {}
+      }
+
+      function showError(message, code) {
+        var status = document.getElementById("status");
+        document.body.className = "";
+        status.textContent = message || "YouTube stream unavailable";
+        notify("error", { code: code || 0, message: status.textContent });
+      }
+
+      if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        showError("Invalid YouTube video ID", 2);
+        return;
+      }
+
+      window.onYouTubeIframeAPIReady = function () {
+        try {
+          player = new window.YT.Player("player", {
+            width: "100%",
+            height: "100%",
+            videoId: videoId,
+            playerVars: {
+              autoplay: 1,
+              controls: controls ? 1 : 0,
+              disablekb: 1,
+              fs: 0,
+              iv_load_policy: 3,
+              mute: muted ? 1 : 0,
+              origin: location.origin,
+              playsinline: 1,
+              rel: 0,
+              widget_referrer: location.origin
+            },
+            events: {
+              onReady: function (event) {
+                notify("ready");
+                try {
+                  if (muted) event.target.mute();
+                  else event.target.unMute();
+                  event.target.playVideo();
+                } catch (error) {}
+              },
+              onStateChange: function (event) {
+                if (!window.YT || !window.YT.PlayerState) return;
+                if (event.data === window.YT.PlayerState.PLAYING) {
+                  if (readyTimer) {
+                    clearTimeout(readyTimer);
+                    readyTimer = 0;
+                  }
+                  document.body.className = "is-ready";
+                  notify("playing", {
+                    title: event.target.getVideoData ? String(event.target.getVideoData().title || "") : ""
+                  });
+                } else if (event.data === window.YT.PlayerState.ENDED) {
+                  notify("ended");
+                }
+              },
+              onAutoplayBlocked: function (event) {
+                try {
+                  event.target.mute();
+                  event.target.playVideo();
+                } catch (error) {}
+                notify("autoplay-blocked");
+              },
+              onError: function (event) {
+                showError("YouTube player error", Number(event.data) || 0);
+              }
+            }
+          });
+        } catch (error) {
+          showError(error && error.message ? error.message : "YouTube player initialization failed", 0);
+        }
+      };
+
+      var script = document.createElement("script");
+      script.async = true;
+      script.src = "https://www.youtube.com/iframe_api";
+      script.onerror = function () { showError("YouTube API unavailable", 0); };
+      document.head.appendChild(script);
+
+      readyTimer = setTimeout(function () {
+        readyTimer = 0;
+        showError("YouTube player timeout", 0);
+      }, 30000);
+    })();
+  </script>
+</body>
+</html>
