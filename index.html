@@ -45,8 +45,13 @@
       var instance = String(query.instance || "");
       var muted = !/^(?:0|false|no)$/i.test(String(query.mute || "1"));
       var controls = /^(?:1|true|yes)$/i.test(String(query.controls || "0"));
+      var contentMode = /^(?:live|recording)$/i.test(String(query.mode || "")) ?
+        String(query.mode).toLowerCase() : "auto";
+      var endAction = /^(?:poster|stop)$/i.test(String(query.end || "")) ?
+        String(query.end).toLowerCase() : "loop";
       var player = null;
       var readyTimer = 0;
+      var liveHint = null;
 
       function notify(eventName, payload) {
         var message = {
@@ -63,6 +68,20 @@
         document.body.className = "";
         status.textContent = message || "YouTube stream unavailable";
         notify("error", { code: code || 0, message: status.textContent });
+      }
+
+      function readLiveHint(target) {
+        try {
+          var data = target && target.getVideoData ? target.getVideoData() : null;
+          return data && typeof data.isLive === "boolean" ? data.isLive : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function resolvedMode() {
+        if (contentMode === "live" || contentMode === "recording") return contentMode;
+        return liveHint === true ? "live" : (liveHint === false ? "recording" : "auto");
       }
 
       if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
@@ -106,11 +125,23 @@
                     readyTimer = 0;
                   }
                   document.body.className = "is-ready";
+                  liveHint = readLiveHint(event.target);
                   notify("playing", {
-                    title: event.target.getVideoData ? String(event.target.getVideoData().title || "") : ""
+                    title: event.target.getVideoData ? String(event.target.getVideoData().title || "") : "",
+                    isLive: liveHint
                   });
                 } else if (event.data === window.YT.PlayerState.ENDED) {
-                  notify("ended");
+                  if (resolvedMode() !== "live" && endAction === "loop") {
+                    try {
+                      event.target.seekTo(0, true);
+                      event.target.playVideo();
+                      notify("loop");
+                    } catch (error) {
+                      notify("ended", { isLive: liveHint });
+                    }
+                  } else {
+                    notify("ended", { isLive: liveHint });
+                  }
                 }
               },
               onAutoplayBlocked: function (event) {
